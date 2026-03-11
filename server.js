@@ -5,10 +5,13 @@ import cors from 'cors'
 import { initBrowser } from './playwright.js'
 import { pollAndSave } from './gameService.js'
 import { startWSServer } from './wsServer.js'
-import { db } from './firestore.js'
+// import { db } from './firestore.js'
+import { connectMongo } from './mongo.js'
 
 const app = express()
 app.use(cors({ origin: '*' }))
+
+const mongo = await connectMongo()
 
 const server = http.createServer(app)
 const ws = startWSServer(server)
@@ -17,17 +20,19 @@ await initBrowser()
 
 app.get('/api/games/init', async (req, res) => {
   try {
-    const snapshot = await db
+    const games = await mongo
       .collection('crash_games')
-      .orderBy('createdAt', 'asc')
+      .find({})
+      .sort({ createdAt: -1 })
       .limit(2000)
-      .get()
+      .toArray()
 
-    const data = snapshot.docs.map(doc => doc.data())
+    // ASC order for frontend
+    games.sort((a, b) => a.createdAt - b.createdAt)
 
     res.json({
       success: true,
-      data
+      data: games   // ✅ FIX: use games, not data
     })
   } catch (err) {
     res.status(500).json({
@@ -36,6 +41,7 @@ app.get('/api/games/init', async (req, res) => {
     })
   }
 })
+
 
 setInterval(() => {
   pollAndSave(newGames => {

@@ -15,7 +15,7 @@ export async function initBrowser() {
 }
 
 export async function fetchCrashHistory() {
-  return page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     const res = await fetch(
       'https://bc.game/api/game/bet/multi/history',
       {
@@ -33,4 +33,14 @@ export async function fetchCrashHistory() {
     )
     return res.json()
   })
+
+  // 🔽 Sort by gameId ASC
+  if (result?.data?.list) {
+    result.data.list.sort(
+      (a, b) => Number(a.gameId) - Number(b.gameId)
+    )
+  }
+
+  return result
 }
+

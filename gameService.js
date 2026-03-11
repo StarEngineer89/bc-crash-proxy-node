@@ -1,29 +1,36 @@
-import { db } from './firestore.js'
+import { connectMongo } from './mongo.js'
 import { fetchCrashHistory } from './playwright.js'
 
-const cache = new Set() // in-memory dedupe
+const cache = new Set()
 
 export async function pollAndSave(onNewGames) {
+  const mongo = await connectMongo()
+  const collection = mongo.collection('crash_games')
+
   const result = await fetchCrashHistory()
   const list = result?.data?.list || []
+  if (!list.length) return
+
+  // get latest gameId
+  const latest = await collection
+    .find({})
+    .sort({ gameId: -1 })
+    .limit(1)
+    .toArray()
+
+  let latestGameId = latest.length ? Number(latest[0].gameId) : 0
 
   const newGames = []
 
   for (const game of list) {
-    if (cache.has(game.gameId)) continue
+    const gameId = Number(game.gameId)
 
-    const ref = db.collection('crash_games').doc(String(game.gameId))
-    const snap = await ref.get()
-
-    if (snap.exists) {
-      cache.add(game.gameId)
-      continue
-    }
+    if (cache.has(gameId) || gameId <= latestGameId) continue
 
     const detail = JSON.parse(game.gameDetail)
 
     const data = {
-      gameId: game.gameId,
+      gameId,
       rate: detail.rate,
       hash: detail.hash,
       beginTime: detail.beginTime,
@@ -31,14 +38,19 @@ export async function pollAndSave(onNewGames) {
       createdAt: Date.now()
     }
 
-    await ref.set(data)
-
-    cache.add(game.gameId)
-    newGames.push(data)
+    try {
+      await collection.insertOne(data)
+      cache.add(gameId)
+      newGames.push(data)
+    } catch (err) {
+      // ignore duplicate key errors
+      if (err.code !== 11000) {
+        console.error(err)
+      }
+    }
   }
 
   if (newGames.length) {
-    console.log(`💾 New games saved: ${newGames.length}`)
     onNewGames(newGames)
   }
 }
