@@ -87,6 +87,7 @@ async function preparePage() {
 
       body{
           overflow:hidden !important;
+          zoom: 0.5
       }
     `
   })
@@ -103,21 +104,14 @@ async function startStreaming() {
 
     try {
       const game = page.locator('.crash-game')
-      // latestFrame = await page.screenshot({
-
-      //   type: 'jpeg',
-
-      //   quality: 60
-
-      // })
       latestFrame = await page.screenshot({
         type: 'jpeg',
         quality: 60,
         clip: {
           x: 500,
-          y: 150,
+          y: 60,
           width: 300,
-          height: 250
+          height: 150
         }
       })
 
