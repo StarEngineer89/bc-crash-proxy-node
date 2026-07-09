@@ -1,37 +1,79 @@
 import { WebSocketServer } from 'ws'
-import { db } from './firestore.js'
+import { getLatestFrame } from './playwright.js'
 
-export function startWSServer(httpServer) {
-  const wss = new WebSocketServer({ server: httpServer })
+export function startWSServer(server) {
 
-  wss.on('connection', async ws => {
-    console.log('🔌 Client connected')
+    const wss = new WebSocketServer({ server })
 
-    // Send latest 20 games on connect
-    const snap = await db
-      .collection('crash_games')
-      .orderBy('createdAt', 'desc')
-      .limit(20)
-      .get()
+    wss.on('connection', ws => {
+        console.log('Client connected')
 
-    ws.send(JSON.stringify({
-      type: 'init',
-      data: snap.docs.map(d => d.data())
-    }))
-  })
+        ws.on('close', () => {
+            console.log('Client disconnected')
+        })
+    })
 
-  return {
-    broadcast(data) {
-      const msg = JSON.stringify({
-        type: 'update',
-        data
-      })
+    //-------------------------------------------------
+    // Broadcast new game results
+    //-------------------------------------------------
 
-      wss.clients.forEach(client => {
-        if (client.readyState === 1) {
-          client.send(msg)
-        }
-      })
+    wss.broadcast = (games) => {
+
+        const msg = JSON.stringify({
+            type: 'games',
+            data: games
+        })
+
+        wss.clients.forEach(client => {
+
+            if (client.readyState === 1) {
+                client.send(msg)
+            }
+
+        })
+
     }
-  }
+
+    //-------------------------------------------------
+    // Broadcast video frames
+    //-------------------------------------------------
+
+    wss.broadcastFrame = () => {
+
+        const frame = getLatestFrame()
+
+        if (!frame) return
+
+        const msg = JSON.stringify({
+
+            type: 'frame',
+
+            data: frame.toString('base64')
+
+        })
+
+        wss.clients.forEach(client => {
+
+            if (client.readyState === 1) {
+
+                client.send(msg)
+
+            }
+
+        })
+
+    }
+
+    //-------------------------------------------------
+    // 5 FPS
+    //-------------------------------------------------
+
+    setInterval(() => {
+
+        wss.broadcastFrame()
+
+    }, 200)
+
+    return wss
+
 }

@@ -1,23 +1,49 @@
 import { chromium } from 'playwright'
 
+let browser
+let context
 let page
 
+// Latest JPEG frame
+let latestFrame = null
+
+// Streaming state
+let streaming = false
+
 export async function initBrowser() {
-  const browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext()
+  const browser = await chromium.launch({
+    headless: true,
+    proxy: {
+      server: 'http://151.245.201.234:12323',
+      username: '14a76df1b8c38',
+      password: '34ebe20573'
+    }
+  })
+  // const context = await browser.newContext()
+  context = await browser.newContext({
+    viewport: {
+      width: 1400,
+      height: 900
+    }
+  })
+
   page = await context.newPage()
 
-  await page.goto('https://bc.game/game/crash', {
+  await page.goto('https://playbc.fun/game/crash', {
     waitUntil: 'networkidle'
   })
 
   console.log('✅ Playwright ready')
+
+  await preparePage()
+
+  startStreaming()
 }
 
 export async function fetchCrashHistory() {
   const result = await page.evaluate(async () => {
     const res = await fetch(
-      'https://bc.game/api/game/bet/multi/history',
+      'https://playbc.fun/api/game/bet/multi/history',
       {
         method: 'POST',
         headers: {
@@ -44,3 +70,72 @@ export async function fetchCrashHistory() {
   return result
 }
 
+async function preparePage() {
+
+  await page.addStyleTag({
+    content: `
+      .dialog-root,
+      .dialog-title,
+      .header,
+      .footer,
+      .chat-room,
+      .announcement,
+      .popup,
+      .modal{
+          display:none !important;
+      }
+
+      body{
+          overflow:hidden !important;
+      }
+    `
+  })
+
+}
+
+async function startStreaming() {
+
+  if (streaming) return
+
+  streaming = true
+
+  while (true) {
+
+    try {
+      const game = page.locator('.crash-game')
+      // latestFrame = await page.screenshot({
+
+      //   type: 'jpeg',
+
+      //   quality: 60
+
+      // })
+      latestFrame = await page.screenshot({
+        type: 'jpeg',
+        quality: 60,
+        clip: {
+          x: 500,
+          y: 150,
+          width: 300,
+          height: 250
+        }
+      })
+
+    }
+    catch(err){
+
+      console.error(err)
+
+    }
+
+    await new Promise(r => setTimeout(r, 200))
+
+  }
+
+}
+
+export function getLatestFrame(){
+
+    return latestFrame
+
+}

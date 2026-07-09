@@ -42,12 +42,47 @@ app.get('/api/games/init', async (req, res) => {
   }
 })
 
+app.get('/api/games/by-date', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+
+    const start = new Date(startDate).getTime()
+    const end = new Date(endDate).getTime()
+
+    const games = await mongo
+      .collection('crash_games')
+      .find({
+        createdAt: {
+          $gte: start,
+          $lte: end
+        }
+      })
+      .sort({ createdAt: 1 })
+      .toArray()
+
+    res.json({
+      success: true,
+      data: games
+    })
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    })
+  }
+})
 
 setInterval(() => {
   pollAndSave(newGames => {
     ws.broadcast(newGames)
   }).catch(console.error)
-}, 3000)
+}, 2000)
+
+// setInterval(() => {
+//   pollAndSave(newGames => {
+//     ws.broadcastGames(newGames)
+//   }).catch(console.error)
+// }, 1000)
 
 server.listen(3000, () => {
   console.log('🚀 Server running on http://localhost:3000')
