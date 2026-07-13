@@ -23,12 +23,12 @@ app.get('/api/games/init', async (req, res) => {
     const games = await mongo
       .collection('crash_games')
       .find({})
-      .sort({ createdAt: -1 })
+      .sort({ gameId: -1 })
       .limit(2000)
       .toArray()
 
     // ASC order for frontend
-    games.sort((a, b) => a.createdAt - b.createdAt)
+    games.sort((a, b) => a.gameId - b.gameId)
 
     res.json({
       success: true,
@@ -57,7 +57,7 @@ app.get('/api/games/by-date', async (req, res) => {
           $lte: end
         }
       })
-      .sort({ createdAt: 1 })
+      .sort({ gameId: 1 })
       .toArray()
 
     res.json({
@@ -77,12 +77,6 @@ setInterval(() => {
     ws.broadcast(newGames)
   }).catch(console.error)
 }, 2000)
-
-// setInterval(() => {
-//   pollAndSave(newGames => {
-//     ws.broadcastGames(newGames)
-//   }).catch(console.error)
-// }, 1000)
 
 server.listen(3000, () => {
   console.log('🚀 Server running on http://localhost:3000')

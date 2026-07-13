@@ -68,11 +68,11 @@ export function startWSServer(server) {
     // 5 FPS
     //-------------------------------------------------
 
-    setInterval(() => {
+    // setInterval(() => {
 
-        wss.broadcastFrame()
+    //     ws.broadcastFrame()
 
-    }, 200)
+    // }, 200)
 
     return wss
 
