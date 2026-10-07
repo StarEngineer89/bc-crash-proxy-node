@@ -14,9 +14,9 @@ export async function initBrowser() {
   const browser = await chromium.launch({
     headless: true,
     proxy: {
-      server: 'http://199.182.170.41:12323',
-      username: '14a8cbf919640',
-      password: '7e23aba218'
+      server: '',
+      username: '',
+      password: ''
     }
   })
   // const context = await browser.newContext()
