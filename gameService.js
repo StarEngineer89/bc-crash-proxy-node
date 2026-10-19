@@ -8,7 +8,8 @@ export async function pollAndSave(onNewGames) {
   const collection = mongo.collection('crash_games')
 
   const result = await fetchCrashHistory()
-  const list = result?.data?.list || []
+  // const list = result?.data?.list || []
+  const list = result
   if (!list.length) return
 
   // get latest gameId
@@ -25,22 +26,23 @@ export async function pollAndSave(onNewGames) {
   for (const game of list) {
     const gameId = Number(game.gameId)
 
-    if (cache.has(gameId) || gameId <= latestGameId) continue
+    if (gameId <= latestGameId) continue
 
-    const detail = JSON.parse(game.gameDetail)
+    // const detail = JSON.parse(game.gameDetail)
+    const detail = game
 
     const data = {
       gameId,
       rate: detail.rate,
       hash: detail.hash,
-      beginTime: detail.beginTime,
-      endTime: detail.endTime,
+      // beginTime: detail.beginTime,
+      // endTime: detail.endTime,
       createdAt: Date.now()
     }
 
     try {
       await collection.insertOne(data)
-      cache.add(gameId)
+      // cache.add(gameId)
       newGames.push(data)
     } catch (err) {
       // ignore duplicate key errors
