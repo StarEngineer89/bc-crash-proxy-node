@@ -11,39 +11,17 @@ let latestFrame = null
 // Streaming state
 let streaming = false
 
+// Throttle for debug screenshots
+let lastDebugShotAt = 0
+
 const URL = 'https://bc.fun/game/crash';
 
-export async function initBrowser() {
-  const browser = await chromium.launch({
-    headless: true,
-    proxy: {
-      server: process.env.PROXY_URL,
-      username: process.env.PROXY_USERNAME,
-      password: process.env.PROXY_PASSWORD
-    }
-  })
-  // const context = await browser.newContext()
-  context = await browser.newContext({
-    viewport: {
-      width: 1400,
-      height: 900
-    }
-  })
+async function closeBrowser() {
+  try { await browser?.close() } catch {}
+  browser = context = page = null
+}
 
-  page = await context.newPage()
-
-  // await page.goto(URL, {
-  //   waitUntil: 'networkidle'
-  // })
-  await page.goto(URL, {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000,
-  });
-
-  console.log('✅ Playwright ready')
-
-  await preparePage()
-
+async function openHistoryTab() {
   // Find and click the History tab.
   const historyTab = page.getByText('History', { exact: true }).first();
   await historyTab.waitFor({ state: 'visible', timeout: 20000 });
@@ -60,105 +38,148 @@ export async function initBrowser() {
   await page.waitForTimeout(3000);
 }
 
-// export async function fetchCrashHistory() {
-//   const result = await page.evaluate(async () => {
-//     const res = await fetch(
-//       'https://playbc.fun/api/game/bet/multi/history',
-//       {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//           'Accept': 'application/json'
-//         },
-//         body: JSON.stringify({
-//           gameUrl: 'crash',
-//           page: 1,
-//           pageSize: 20
-//         })
-//       }
-//     )
-//     return res.json()
-//   })
+export async function initBrowser() {
+  await closeBrowser()
 
-//   // 🔽 Sort by gameId ASC
-//   if (result?.data?.list) {
-//     result.data.list.sort(
-//       (a, b) => Number(a.gameId) - Number(b.gameId)
-//     )
-//   }
+  browser = await chromium.launch({
+    headless: true,
+    proxy: {
+      server: process.env.PROXY_URL,
+      username: process.env.PROXY_USERNAME,
+      password: process.env.PROXY_PASSWORD
+    }
+  })
 
-//   return result
-// }
+  browser.on('disconnected', () => {
+    console.error('Browser disconnected')
+    browser = context = page = null
+  })
 
-export async function fetchCrashHistory() {
-  const results = await page.evaluate(() => {
-      const output = [];
-      const seen = new Set();
+  context = await browser.newContext({
+    viewport: {
+      width: 1400,
+      height: 900
+    }
+  })
 
-      function addResult(gameId, result, hashString) {
-        if (!gameId || !result) return;
+  page = await context.newPage()
+  page.on('crash', () => console.error('Page crashed'))
 
-        const id = String(gameId).replace(/,/g, '');
-        const rate = String(result).replace(/,/g, '');
-        const hash = String(hashString).replace(/,/g, '');
+  await page.goto(URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000,
+  });
 
-        if (!/^\d+$/.test(id)) return;
-        if (!/^\d+(?:\.\d+)?\s*x?$/i.test(rate)) return;
+  await preparePage()
+  await openHistoryTab()
 
-        const numericRate = Number(rate.replace(/x$/i, ''));
-        if (!Number.isFinite(numericRate) || numericRate <= 0) return;
+  console.log('✅ Playwright ready')
+}
 
-        const key = `${id}:${numericRate}`;
-        if (seen.has(key)) return;
-        seen.add(key);
+export async function restartBrowser() {
+  console.warn('♻️ Restarting browser')
+  await initBrowser()
+}
 
-        output.push({
-          gameId: Number(id),
-          rate: numericRate,
-          hash: hash
-        });
-      }
+async function extractRows() {
+  return page.evaluate(() => {
+    const output = [];
+    const seen = new Set();
 
-      // Strategy 1: conventional HTML table rows.
-      for (const row of document.querySelectorAll(
-        '.tabs-content div.grid'
-      )) {
-        const cells = row.children;
+    function addResult(gameId, result, hashString) {
+      if (!gameId || !result) return;
 
-        if (cells.length < 3) continue;
+      const id = String(gameId).replace(/,/g, '');
+      const rate = String(result).replace(/,/g, '');
+      const hash = String(hashString).replace(/,/g, '');
 
-        // Game ID is nested inside the first cell.
-        const idElement = cells[0].querySelector(
-          'span.hover\\:underline'
-        );
+      if (!/^\d+$/.test(id)) return;
+      if (!/^\d+(?:\.\d+)?\s*x?$/i.test(rate)) return;
 
-        const id = idElement?.innerText.trim().replace(/,/g, '');
+      const numericRate = Number(rate.replace(/x$/i, ''));
+      if (!Number.isFinite(numericRate) || numericRate <= 0) return;
 
-        // Multiplier is the text in the second cell.
-        const rate = cells[1].innerText.trim().replace(/,/g, '');
+      const key = `${id}:${numericRate}`;
+      if (seen.has(key)) return;
+      seen.add(key);
 
-        const hash = cells[2].innerText.trim().replace(/,/g, '');
-        if (id && rate && hash) addResult(id, rate, hash);
-      }
-
-      return output;
-    });
-
-    results.sort((a, b) => a.gameId - b.gameId);
-
-    if (results.length === 0) {
-      await page.screenshot({ path: 'history-debug.png', fullPage: true });
-      const visibleText = await page.locator('body').innerText();
-      console.error(
-        'No results extracted. Visible page text (first 8000 chars):\\n',
-        visibleText.slice(0, 8000)
-      );
-      throw new Error(
-        'No history results found. Inspect history-debug.png and adjust selectors in scraper.js.'
-      );
+      output.push({
+        gameId: Number(id),
+        rate: numericRate,
+        hash: hash
+      });
     }
 
-    return results;
+    // Conventional HTML table rows.
+    for (const row of document.querySelectorAll(
+      '.tabs-content div.grid'
+    )) {
+      const cells = row.children;
+
+      if (cells.length < 3) continue;
+
+      // Game ID is nested inside the first cell.
+      const idElement = cells[0].querySelector(
+        'span.hover\\:underline'
+      );
+
+      const id = idElement?.innerText.trim().replace(/,/g, '');
+
+      // Multiplier is the text in the second cell.
+      const rate = cells[1].innerText.trim().replace(/,/g, '');
+
+      const hash = cells[2].innerText.trim().replace(/,/g, '');
+      if (id && rate && hash) addResult(id, rate, hash);
+    }
+
+    return output;
+  });
+}
+
+export async function fetchCrashHistory() {
+  if (!page || page.isClosed()) {
+    throw new Error('Browser page is not available')
+  }
+
+  let results = await extractRows();
+
+  // History tab may have been lost (reload/navigation) - try to recover once.
+  if (results.length === 0) {
+    try {
+      await preparePage()
+      await openHistoryTab()
+      results = await extractRows()
+    } catch (err) {
+      console.error('History tab recovery failed:', err.message)
+    }
+  }
+
+  results.sort((a, b) => a.gameId - b.gameId);
+
+  if (results.length === 0) {
+    console.error('No results extracted. Current URL:', page.url())
+
+    // Throttle debug screenshots to once per 5 minutes
+    if (Date.now() - lastDebugShotAt > 5 * 60 * 1000) {
+      lastDebugShotAt = Date.now()
+      try {
+        await page.screenshot({ path: 'history-debug.png', fullPage: true });
+        const visibleText = await page.locator('body').innerText();
+        console.error(
+          'Visible page text (first 2000 chars):\n',
+          visibleText.slice(0, 2000)
+        );
+      } catch (err) {
+        console.error('Debug capture failed:', err.message)
+      }
+    }
+
+    throw new Error(
+      'No history results found. Inspect history-debug.png and adjust selectors.'
+    );
+  }
+
+  return results;
 }
 
 async function preparePage() {
@@ -194,7 +215,6 @@ async function startStreaming() {
   while (true) {
 
     try {
-      const game = page.locator('.crash-game')
       latestFrame = await page.screenshot({
         type: 'jpeg',
         quality: 60,
