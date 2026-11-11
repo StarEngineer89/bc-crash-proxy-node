@@ -182,7 +182,22 @@ export async function fetchCrashHistory() {
   return results;
 }
 
+async function removePopOverlayer() {
+  try {
+    const removed = await page.evaluate(() => {
+      const els = document.querySelectorAll('.pop-overlayer');
+      els.forEach(el => el.remove());
+      return els.length;
+    });
+    if (removed > 0) console.log(`🧹 Removed ${removed} .pop-overlayer element(s)`);
+  } catch (err) {
+    console.error('Failed to remove .pop-overlayer:', err.message);
+  }
+}
+
 async function preparePage() {
+
+  await removePopOverlayer()
 
   await page.addStyleTag({
     content: `

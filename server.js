@@ -108,15 +108,34 @@ const withTimeout = (promise, ms) =>
     )
   ])
 
+// Latest 10 results, oldest -> newest
+async function getLatestGames(limit = 10) {
+  const games = await mongo
+    .collection('crash_games')
+    .find({})
+    .sort({ gameId: -1 })
+    .limit(limit)
+    .toArray()
+
+  return games.reverse()
+}
+
 async function tick() {
   try {
+    let hasNew = false
+
     await withTimeout(
-      pollAndSave(newGames => {
+      pollAndSave(() => {
         lastNewGameAt = Date.now()
-        ws.broadcast(newGames)
+        hasNew = true
       }),
       POLL_TIMEOUT_MS
     )
+
+    // New result saved -> broadcast the latest 10
+    if (hasNew) {
+      ws.broadcast(await getLatestGames(10))
+    }
     failures = 0
   } catch (err) {
     failures++
